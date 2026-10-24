@@ -2478,6 +2478,13 @@ PyInit_video(void);
 
 #endif
 
+// pygame._sdl2 C modules (single-phase), included at the end of this file
+PyMODINIT_FUNC
+PyInit_controller(void);
+
+PyMODINIT_FUNC
+PyInit_touch(void);
+
 // pygame_static module
 
 PyObject *
@@ -2571,6 +2578,12 @@ mod_pygame_import_cython(PyObject *self, PyObject *spec)
     load_submodule_mphase("pygame._sdl2", PyInit_audio(), spec, "audio");
     load_submodule_mphase("pygame._sdl2", PyInit_video(), spec, "video");
 #endif
+    /* Compiled into this file (#include "_sdl2/controller.c" and
+     * "_sdl2/touch.c" below) but otherwise never loaded, so
+     * `import pygame._sdl2.controller` failed. pygame._sdl2 exists by now
+     * (pygame/__init__.py imports it before calling import_cython). */
+    load_submodule("pygame._sdl2", PyInit_controller(), "controller");
+    load_submodule("pygame._sdl2", PyInit_touch(), "touch");
 
     Py_RETURN_NONE;
 }
