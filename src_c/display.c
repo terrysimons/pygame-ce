@@ -368,7 +368,16 @@ pg_vidinfo_getattr(PyObject *self, char *name)
         return PyUnicode_FromString(pixel_format_name);
     }
 
-    return RAISE(PyExc_AttributeError, "does not exist in vidinfo");
+    /* Anything else, __class__ included, gets the normal lookup. Raising
+     * for every other name broke isinstance() checks on some Python versions
+     * (e.g. logging.LogRecord's Mapping check on CPython 3.14.2). */
+    PyObject *name_object = PyUnicode_FromString(name);
+    if (!name_object) {
+        return NULL;
+    }
+    PyObject *result = PyObject_GenericGetAttr(self, name_object);
+    Py_DECREF(name_object);
+    return result;
 }
 
 PyObject *
