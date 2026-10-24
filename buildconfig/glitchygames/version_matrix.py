@@ -311,7 +311,12 @@ def collect_patches(patch_base: str, patch_branch: str, patch_directory: Path) -
         One record per patch: commit, subject, file.
     """
     base_commit = resolve_patch_base(patch_base)
-    commits = run_git('rev-list', '--reverse', '--no-merges', f'{base_commit}..{patch_branch}').stdout.split()
+    # First parents only: the branch moves to a new upstream release by a merge whose first
+    # parent is the new line (git merge -s ours of the old one), so the old line's copies of
+    # the fixes are not listed again
+    commits = run_git(
+        'rev-list', '--reverse', '--no-merges', '--first-parent', f'{base_commit}..{patch_branch}'
+    ).stdout.split()
     patches = []
     for commit in commits:
         subject = run_git('log', '-1', '--format=%s', commit).stdout.strip()
