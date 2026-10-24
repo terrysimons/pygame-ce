@@ -33,6 +33,17 @@ class DisplayModuleTest(unittest.TestCase):
         self.assertEqual(inf.current_h, 128)
         self.assertEqual(inf.current_w, 128)
 
+    def test_Info_generic_attributes(self):
+        """Attributes other than the video info ones use the normal lookup."""
+        import collections.abc
+
+        inf = pygame.display.Info()
+        self.assertIs(inf.__class__, type(inf))
+        # isinstance() must not raise (logging does this check on its arguments)
+        self.assertFalse(isinstance(inf, collections.abc.Mapping))
+        with self.assertRaises(AttributeError):
+            inf.no_such_attribute
+
     def test_flip(self):
         screen = pygame.display.set_mode((100, 100))
 
