@@ -1,0 +1,239 @@
+name: GlitchyGames Pyodide version matrix
+
+# GlitchyGames' fork only, experimental: builds our patched Pyodide wheel of pygame-ce for the
+# current versions and tries every newer pygame-ce release (and upstream main) against the
+# Pyodide cross-build environments that matter (the one PyScript pins, plus the newest newer
+# release of each Python 3.14 Pyodide line), with buildconfig/glitchygames/version_matrix.py.
+# Per pair it reports whether each of our patches applied cleanly, needed a 3-way merge, is
+# already upstream or conflicts; whether the wheel built; and whether the browser checks pass
+# (pygame-ce's own tests plus the static-module probe, Playwright Chromium and WebKit). The table
+# is the run's job summary; version-matrix.json is in the version-matrix-report artifact.
+# Passing pairs are published as experimental pre-releases (tags experimental-pygame-ce-*).
+#
+# The driver, the build script and the patches all come from the patch branch (default
+# glitchygames-wasm), checked out explicitly: a scheduled run uses the default branch's copy of
+# this file, so this file must also be on the default branch for the weekly run to happen.
+on:
+  schedule:
+  - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      patch_branch:
+        description: Branch holding our patches and the build tooling
+        default: glitchygames-wasm
+      all_pyodide_versions:
+        description: Every newer Pyodide release, not just the newest of each line
+        type: boolean
+        default: false
+      publish:
+        description: Publish passing pairs as experimental pre-releases
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PATCH_BRANCH: ${{ inputs.patch_branch || 'glitchygames-wasm' }}
+  PLAYWRIGHT_VERSION: 1.56.0
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      pairs: ${{ steps.discover.outputs.pairs }}
+      discovery: ${{ steps.discover.outputs.discovery }}
+    steps:
+    - uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ env.PATCH_BRANCH }}
+        persist-credentials: false
+
+    - name: Find the pygame-ce and Pyodide versions to try
+      id: discover
+      env:
+        ALL_PYODIDE_VERSIONS: ${{ inputs.all_pyodide_versions && 'true' || 'false' }}
+      run: |
+        options=(--github-output)
+        if [ "$ALL_PYODIDE_VERSIONS" = true ]; then
+          options+=(--all-pyodide-versions)
+        fi
+        python3 buildconfig/glitchygames/version_matrix.py discover "${options[@]}"
+
+  build:
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # One pair failing must not hide the others: the driver records a failed patch or build in
+    # pair-result.json and exits 0; this only covers the job itself breaking
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    name: build ${{ matrix.slug }}
+    steps:
+    - uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ env.PATCH_BRANCH }}
+        # The patches are the commits after the base release tag: full history needed
+        fetch-depth: 0
+        persist-credentials: false
+
+    - uses: astral-sh/setup-uv@v7
+
+    # pyodide-build's venv, this Pyodide's cross-build environment and Emscripten with its ports
+    - uses: actions/cache@v5.0.3
+      with:
+        path: ~/.cache/glitchygames-pyodide-build
+        key: pyodide-build-${{ matrix.pyodide }}-${{ hashFiles('buildconfig/glitchygames/build_pyodide_wheel.sh') }}
+
+    - name: Patch and build
+      env:
+        PYGAME_REF: ${{ matrix.pygame_ref }}
+        PYGAME_COMMIT: ${{ matrix.pygame_commit }}
+        PYODIDE: ${{ matrix.pyodide }}
+      run: |
+        python3 buildconfig/glitchygames/version_matrix.py run --pygame-ref "$PYGAME_REF" \
+          --pygame-commit "$PYGAME_COMMIT" --pyodide "$PYODIDE" --output-directory dist-version-matrix
+
+    - uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: pair-${{ matrix.slug }}
+        path: dist-version-matrix/${{ matrix.slug }}/
+        if-no-files-found: warn
+
+  browser-checks:
+    needs: [discover, build]
+    if: always() && needs.discover.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        pair: ${{ fromJSON(needs.discover.outputs.pairs) }}
+        browser: [chromium, webkit]
+    name: ${{ matrix.browser }} ${{ matrix.pair.slug }}
+    steps:
+    - uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ env.PATCH_BRANCH }}
+        persist-credentials: false
+
+    - uses: astral-sh/setup-uv@v7
+
+    - uses: actions/download-artifact@v7
+      continue-on-error: true
+      with:
+        name: pair-${{ matrix.pair.slug }}
+        path: pair
+
+    - name: Check whether the pair built
+      id: wheel
+      run: |
+        wheels=(pair/wheel/*.whl)
+        if [ -f "${wheels[0]}" ]; then
+          echo "path=${wheels[0]}" >> "$GITHUB_OUTPUT"
+        else
+          echo "No wheel for this pair (patch conflict or build failure): nothing to check"
+        fi
+
+    - name: Install Playwright's ${{ matrix.browser }}
+      if: steps.wheel.outputs.path != ''
+      env:
+        BROWSER: ${{ matrix.browser }}
+      run: |
+        uv run -q --no-project --python 3.14 --with "playwright==$PLAYWRIGHT_VERSION" \
+          playwright install --with-deps "$BROWSER"
+
+    - name: Run the browser checks
+      if: steps.wheel.outputs.path != ''
+      env:
+        BROWSER: ${{ matrix.browser }}
+        PYODIDE: ${{ matrix.pair.pyodide }}
+        SLUG: ${{ matrix.pair.slug }}
+        WHEEL: ${{ steps.wheel.outputs.path }}
+      run: |
+        mkdir -p browser-results
+        uv run -q --no-project --python 3.14 --with "playwright==$PLAYWRIGHT_VERSION" \
+          python buildconfig/glitchygames/browser_checks/run_browser_checks.py --wheel "$WHEEL" \
+          --tests-zip pair/pygame-ce-tests.zip --pyodide "$PYODIDE" --browser "$BROWSER" \
+          --slug "$SLUG" --output "browser-results/browser-result-$BROWSER.json"
+
+    - uses: actions/upload-artifact@v6
+      if: always() && steps.wheel.outputs.path != ''
+      with:
+        name: browser-${{ matrix.pair.slug }}-${{ matrix.browser }}
+        path: browser-results/
+
+  summary:
+    needs: [discover, build, browser-checks]
+    if: always() && needs.discover.result == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      publishable: ${{ steps.report.outputs.publishable }}
+      publishable_count: ${{ steps.report.outputs.publishable_count }}
+    steps:
+    - uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ env.PATCH_BRANCH }}
+        persist-credentials: false
+
+    - uses: actions/download-artifact@v7
+      with:
+        path: results
+
+    - name: Report
+      id: report
+      env:
+        DISCOVERY: ${{ needs.discover.outputs.discovery }}
+      run: |
+        printf '%s\n' "$DISCOVERY" > results/discovery.json
+        python3 buildconfig/glitchygames/version_matrix.py report --results-directory results \
+          --report-directory report --github-output --github-step-summary
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: version-matrix-report
+        path: report/
+
+  publish:
+    needs: summary
+    if: >-
+      always() && needs.summary.result == 'success' && needs.summary.outputs.publishable_count != '0'
+      && (github.event_name == 'schedule' || inputs.publish)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.summary.outputs.publishable) }}
+    name: publish ${{ matrix.slug }}
+    steps:
+    - uses: actions/download-artifact@v7
+      with:
+        name: pair-${{ matrix.slug }}
+        path: pair
+
+    - uses: actions/download-artifact@v7
+      with:
+        name: version-matrix-report
+        path: report
+
+    - uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ matrix.tag }}
+        target_commitish: ${{ matrix.target_commit }}
+        name: Experimental ${{ matrix.slug }}
+        body_path: report/release-notes/${{ matrix.slug }}.md
+        prerelease: true
+        make_latest: false
+        files: |
+          pair/wheel/*.whl
+          pair/wheel/build-info.json

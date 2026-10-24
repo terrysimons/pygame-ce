@@ -62,3 +62,5 @@ src_c/pypm.c
 
 # GlitchyGames Pyodide wheel builds (buildconfig/glitchygames/build_pyodide_wheel.sh)
 dist-pyodide/
+# GlitchyGames version matrix results (buildconfig/glitchygames/version_matrix.py)
+dist-version-matrix/

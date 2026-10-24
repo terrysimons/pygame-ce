@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>GlitchyGames pygame-ce browser checks</title>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <script type="module">
+    // One check per page load (a hanging test freezes the page, so run_browser_checks.py loads
+    // this page once per check, with a timeout). Adapted from the pygame-ce-wasm feasibility
+    // study's probes/pyodide-direct/pygame-tests.html and static-modules.html
+    // (../pygame-ce-wasm/probes in the GlitchyGames workspace).
+    //   ?pyodide=314.0.3  the Pyodide runtime (from jsDelivr, as PyScript loads it)
+    //   ?wheel=<url>      the pygame-ce wheel under test
+    //   ?tests=<url>      zip of the tree's test/ directory, unpacked as pygame.tests
+    //   ?check=<name>     a pygame-ce test module (freetype_test, ...) or static_modules
+    // The result is JSON from window.__checks_result(); a JavaScript failure is in
+    // window.__checks_error.
+    const parameters = new URLSearchParams(location.search);
+    try {
+      const version = parameters.get('pyodide') || '314.0.3';
+      const check = parameters.get('check');
+      const { loadPyodide } = await import(`https://cdn.jsdelivr.net/pyodide/v${version}/full/pyodide.mjs`);
+      const pyodide = await loadPyodide();
+      pyodide.canvas.setCanvas2D(document.getElementById('canvas'));
+      await pyodide.loadPackage([new URL(parameters.get('wheel'), location.href).href, 'numpy']);
+      const tests = await (await fetch(parameters.get('tests'))).arrayBuffer();
+      pyodide.unpackArchive(tests, 'zip', { extractDir: '/lib/python3.14/site-packages/pygame/tests' });
+      pyodide.globals.set('check_name', check);
+      const result = await pyodide.runPythonAsync(`
+import io, json, unittest
+import pygame
+result = {'check': check_name, 'pygame_ce': pygame.version.ver}
+
+def run_test_module(name):
+    # Like pygame's own runner with exclude=interactive: skip classes tagged 'interactive'
+    # (they prompt for input, which would block the page)
+    module = __import__(f'pygame.tests.{name}', fromlist=['*'])
+    suite = unittest.TestSuite()
+    skipped_interactive = []
+    for attribute in vars(module).values():
+        if isinstance(attribute, type) and issubclass(attribute, unittest.TestCase):
+            if 'interactive' in getattr(attribute, '__tags__', []):
+                skipped_interactive.append(attribute.__name__)
+                continue
+            suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(attribute))
+    outcome = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+    return {
+        'run': outcome.testsRun, 'failures': len(outcome.failures), 'errors': len(outcome.errors),
+        'skipped': len(outcome.skipped), 'skipped_interactive_classes': skipped_interactive,
+        'problems': [f'{test.id()}: {text.strip().splitlines()[-1][:200]}'
+                     for test, text in outcome.failures + outcome.errors],
+    }
+
+def static_modules():
+    # Each of our three patches, checked directly on the wheel alone (no runtime workaround):
+    # module state for freetype, _sdl2.controller/_sdl2.touch loaded, VidInfo generic getattr.
+    # A probe passes when it does not raise
+    import collections.abc
+    pygame.init()
+
+    def vidinfo_is_not_a_mapping():
+        # isinstance() raised AttributeError before the VidInfo fix (logging does this check)
+        if isinstance(pygame.display.Info(), collections.abc.Mapping):
+            raise AssertionError('isinstance(VidInfo, Mapping) returned True')
+
+    def controller_count():
+        import pygame._sdl2.controller
+        pygame._sdl2.controller.init()
+        return pygame._sdl2.controller.get_count()
+
+    def touch_device_count():
+        import pygame._sdl2.touch
+        return pygame._sdl2.touch.get_num_devices()
+
+    def freetype_render_size():
+        import pygame.freetype
+        return pygame.freetype.Font(None, 14).render('Glitchy', 'white')[0].get_size()
+
+    def freetype_cache_size():
+        import pygame.freetype
+        return pygame.freetype.get_cache_size()
+
+    probes = {
+        'freetype.get_cache_size': freetype_cache_size,
+        'freetype.Font(None).render': freetype_render_size,
+        'pygame._sdl2.controller init/get_count': controller_count,
+        'pygame._sdl2.touch get_num_devices': touch_device_count,
+        'VidInfo isinstance(Mapping) is False': vidinfo_is_not_a_mapping,
+    }
+    outcome = {}
+    for label, probe in probes.items():
+        try:
+            outcome[label] = f'ok -> {probe()!r}'[:200]
+        except BaseException as error:
+            outcome[label] = f'FAILED: {type(error).__name__}: {error}'[:300]
+    return {'probes': outcome,
+            'problems': [f'{label}: {text}' for label, text in outcome.items() if text.startswith('FAILED')]}
+
+try:
+    result.update(static_modules() if check_name == 'static_modules' else run_test_module(check_name))
+except BaseException as error:
+    result['load_error'] = f'{type(error).__name__}: {error}'[:500]
+json.dumps(result)
+`);
+      window.__checks_result = () => result;
+    } catch (error) {
+      window.__checks_error = String(error && error.stack || error).slice(0, 4000);
+    }
+  </script>
+</body>
+</html>
