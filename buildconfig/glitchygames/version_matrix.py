@@ -51,7 +51,7 @@ PYPI_METADATA_URL = 'https://pypi.org/pypi/pygame-ce/json'
 XBUILDENV_METADATA_URL = 'https://pyodide.github.io/pyodide/api/v2/pyodide-cross-build-environments.json'
 
 # The release the glitchygames-wasm branch is based on: our patches are the commits after it
-CURRENT_PYGAME_VERSION = '2.5.7'
+CURRENT_PYGAME_VERSION = '2.5.8'
 # The Pyodide PyScript 2026.7.3 pins (the runtime GlitchyGames' browser builds use)
 PYSCRIPT_PYODIDE_VERSION = '314.0.3'
 # build_pyodide_wheel.sh's toolchain venv is Python 3.14.2; pyodide-build refuses a cross-build

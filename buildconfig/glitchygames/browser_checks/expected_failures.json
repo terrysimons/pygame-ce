@@ -1,5 +1,5 @@
 {
-  "_comment": "Tests allowed to fail in the browser checks: things a browser page cannot do, not pygame-ce bugs. Keyed by check, then test id without parameters; browsers is 'all' or a list. Baseline: pygame-ce 2.5.7 with our patches in Pyodide 314.0.3 (pygame-ce-wasm results/W4-pygame-tests-fork-*-chromium.json, 2026-10-23).",
+  "_comment": "Tests allowed to fail in the browser checks: things a browser page cannot do, not pygame-ce bugs. Keyed by check, then test id without parameters; browsers is 'all' or a list. Baseline: pygame-ce 2.5.7 with our patches in Pyodide 314.0.3 (pygame-ce-wasm results/W4-pygame-tests-fork-*-chromium.json, 2026-10-23); the same on 2.5.8 and main (version matrix run 40131798850, 2026-10-24).",
   "freetype_test": [
     {"test": "pygame.tests.freetype_test.FreeTypeFontTest.test_load_from_invalid_sized_file_obj", "browsers": "all",
      "reason": "RuntimeError: can't access resource on platform (no file-backed resources in Pyodide)"}

@@ -5,7 +5,7 @@
 # GlitchyGames' fork (branch glitchygames-wasm): the WebAssembly fixes it carries are listed in
 # that branch's history; .github/workflows/glitchygames-wasm-wheel.yml runs this script in CI.
 #
-# Reproduces how pyodide-recipes builds pygame-ce 2.5.7 for Pyodide 314
+# Reproduces how pyodide-recipes builds pygame-ce for Pyodide 314 (its 2.5.7 recipe)
 # (https://github.com/pyodide/pyodide-recipes/blob/main/packages/pygame-ce/meta.yaml, commit
 # 13a9a268fa): the same Emscripten ports and flags, then `pyodide build` against the Pyodide
 # 314.0.3 cross-build environment (Python 3.14.2, Emscripten 5.0.3), which is the runtime
