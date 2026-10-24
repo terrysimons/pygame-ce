@@ -2505,6 +2505,20 @@ load_submodule(const char *parent, PyObject *mod, const char *alias)
             PyDict_SetItemString(modules, fqn, mod);
             PyDict_SetItemString(PyModule_GetDict(mod), "__name__",
                                  PyUnicode_FromString(fqn));
+            /* The import system registers a single-phase module's state for
+             * PyState_FindModule; this loader bypasses it, so do it here.
+             * Without it, e.g. pygame.freetype's module-level functions
+             * (FREETYPE_STATE) find no state and freetype.Font() fails. */
+            PyModuleDef *module_def = PyModule_GetDef(mod);
+            if (module_def && !module_def->m_slots &&
+                PyState_AddModule(mod, module_def) < 0) {
+                snprintf(fqn, sizeof(fqn),
+                         "ERROR: PyState_AddModule failed for %s.%s", parent,
+                         alias);
+                puts(fqn);
+                PyErr_Print();
+                PyErr_Clear();
+            }
             PyModule_AddObjectRef(pmod, alias, mod);
             Py_XDECREF(mod);
         }
