@@ -1,0 +1,25 @@
+{
+  "_comment": "Tests allowed to fail in the browser checks: things a browser page cannot do, not pygame-ce bugs. Keyed by check, then test id without parameters; browsers is 'all' or a list. Baseline: pygame-ce 2.5.7 with our patches in Pyodide 314.0.3 (pygame-ce-wasm results/W4-pygame-tests-fork-*-chromium.json, 2026-10-23).",
+  "freetype_test": [
+    {"test": "pygame.tests.freetype_test.FreeTypeFontTest.test_load_from_invalid_sized_file_obj", "browsers": "all",
+     "reason": "RuntimeError: can't access resource on platform (no file-backed resources in Pyodide)"}
+  ],
+  "ftfont_test": [
+    {"test": "pygame.tests.ftfont_test.FtFontTypeTest.test_load_from_invalid_sized_file_obj", "browsers": "all",
+     "reason": "RuntimeError: can't access resource on platform (no file-backed resources in Pyodide)"}
+  ],
+  "display_test": [
+    {"test": "pygame.tests.display_test.DisplayModuleTest.test_get_active_iconify", "browsers": "all",
+     "reason": "a page cannot be iconified"},
+    {"test": "pygame.tests.display_test.DisplayModuleTest.test_iconify", "browsers": "all",
+     "reason": "a page cannot be iconified"},
+    {"test": "pygame.tests.display_test.DisplayModuleTest.test_set_gamma", "browsers": "all",
+     "reason": "no gamma ramps in the browser"},
+    {"test": "pygame.tests.display_test.DisplayModuleTest.test_set_gamma__tuple", "browsers": "all",
+     "reason": "no gamma ramps in the browser"},
+    {"test": "pygame.tests.display_test.DisplayModuleTest.test_toggle_fullscreen", "browsers": "all",
+     "reason": "fullscreen needs a user gesture"},
+    {"test": "pygame.tests.display_test.DisplayOpenGLTest.test_screen_size_opengl", "browsers": "all",
+     "reason": "no matching EGL context on the 2D canvas"}
+  ]
+}

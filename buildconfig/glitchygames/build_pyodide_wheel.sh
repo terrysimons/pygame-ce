@@ -13,11 +13,14 @@
 #
 # Usage: buildconfig/glitchygames/build_pyodide_wheel.sh [source_dir] [output_dir]
 #   (defaults: this checkout, ./dist-pyodide)
+# Environment: PYODIDE_VERSION selects another cross-build environment (default 314.0.3, the one
+#   PyScript pins); version_matrix.py uses it to try newer Pyodide releases. The toolchain venv
+#   is Python 3.14.2, so only cross-build environments for Python 3.14 work.
 # Toolchain cache (about 2 GB): ~/.cache/glitchygames-pyodide-build
 # Writes the wheel and build-info.json (commit, versions, sha256) to the output directory.
 set -euo pipefail
 
-PYODIDE_VERSION=314.0.3
+PYODIDE_VERSION="${PYODIDE_VERSION:-314.0.3}"
 script_directory="$(cd "$(dirname "$0")" && pwd)"
 source_directory="${1:-$script_directory/../..}"
 output_directory="${2:-$source_directory/dist-pyodide}"
