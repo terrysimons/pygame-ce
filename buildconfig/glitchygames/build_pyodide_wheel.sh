@@ -21,6 +21,10 @@
 set -euo pipefail
 
 PYODIDE_VERSION="${PYODIDE_VERSION:-314.0.3}"
+# Pinned: an unpinned install takes whatever pyodide-build is newest when a cache is first
+# filled, so the same source could build a different wheel. Every build so far used 0.39.2
+# (build-info.json records it); move it on deliberately, with the version matrix checking it
+PYODIDE_BUILD_VERSION="0.39.2"
 script_directory="$(cd "$(dirname "$0")" && pwd)"
 source_directory="${1:-$script_directory/../..}"
 output_directory="${2:-$source_directory/dist-pyodide}"
@@ -32,19 +36,29 @@ mkdir -p "$output_directory"
 output_directory="$(cd "$output_directory" && pwd)"
 
 # Toolchain: pyodide-build in its own venv, the cross-build environment and its Emscripten
-if [ ! -x "$cache_directory/venv/bin/pyodide" ]; then
+if [ ! -x "$cache_directory/venv/bin/python" ]; then
     mkdir -p "$cache_directory"
     uv venv -q --python 3.14.2 "$cache_directory/venv"
-    uv pip install -q --python "$cache_directory/venv/bin/python" pyodide-build
+fi
+# Also corrects a cached venv made before the pin, or with another version
+installed_pyodide_build="$("$cache_directory/venv/bin/python" -c \
+    "import importlib.metadata as metadata; print(metadata.version('pyodide-build'))" 2>/dev/null || true)"
+if [ "$installed_pyodide_build" != "$PYODIDE_BUILD_VERSION" ]; then
+    uv pip install -q --python "$cache_directory/venv/bin/python" "pyodide-build==$PYODIDE_BUILD_VERSION"
 fi
 pyodide="$cache_directory/venv/bin/pyodide"
 if [ ! -d "$PYODIDE_XBUILDENV_PATH/$PYODIDE_VERSION" ]; then
     "$pyodide" xbuildenv install "$PYODIDE_VERSION"
-    "$pyodide" xbuildenv install-emscripten
 fi
 "$pyodide" xbuildenv use "$PYODIDE_VERSION" > /dev/null
-# shellcheck disable=SC1091
-source "$PYODIDE_XBUILDENV_PATH/$PYODIDE_VERSION/emsdk/emsdk_env.sh" > /dev/null 2>&1
+emsdk_environment="$PYODIDE_XBUILDENV_PATH/$PYODIDE_VERSION/emsdk/emsdk_env.sh"
+# Checked on its own, not with the cross-build environment: an Emscripten install that failed
+# after the environment's succeeded would otherwise never be retried
+if [ ! -f "$emsdk_environment" ]; then
+    "$pyodide" xbuildenv install-emscripten
+fi
+# shellcheck disable=SC1090  # Emscripten's own script, at a path chosen at run time
+source "$emsdk_environment" > /dev/null 2>&1
 echo "emcc: $(emcc --version | head -1)"
 # pkg-config must not see the host's .pc files: on macOS with Homebrew, meson otherwise finds
 # the host python-3.14.pc and compiles against host Python headers ("LONG_BIT definition appears
